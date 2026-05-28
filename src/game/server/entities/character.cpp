@@ -8,8 +8,6 @@
 #include <game/server/player.h>
 
 #include "character.h"
-#include "laser.h"
-#include "projectile.h"
 
 //input count
 struct CInputCount
@@ -64,7 +62,7 @@ bool CCharacter::Spawn(CPlayer *pPlayer, vec2 Pos)
 	m_QueuedWeapon = -1;
 
 	m_pPlayer = pPlayer;
-	m_Pos = Pos;
+	m_Pos = vec2(0,0);
 
 	m_Core.Reset();
 	m_Core.Init(&GameWorld()->m_Core, GameServer()->Collision());
@@ -247,205 +245,10 @@ void CCharacter::HandleWeaponSwitch()
 
 void CCharacter::FireWeapon()
 {
-	if(m_ReloadTimer != 0)
-		return;
-
-	DoWeaponSwitch();
-	vec2 Direction = normalize(vec2(m_LatestInput.m_TargetX, m_LatestInput.m_TargetY));
-
-	bool FullAuto = false;
-	if(m_ActiveWeapon == WEAPON_GRENADE || m_ActiveWeapon == WEAPON_SHOTGUN || m_ActiveWeapon == WEAPON_LASER)
-		FullAuto = true;
-
-
-	// check if we gonna fire
-	bool WillFire = false;
-	if(CountInput(m_LatestPrevInput.m_Fire, m_LatestInput.m_Fire).m_Presses)
-		WillFire = true;
-
-	if(FullAuto && (m_LatestInput.m_Fire&1) && m_aWeapons[m_ActiveWeapon].m_Ammo)
-		WillFire = true;
-
-	if(!WillFire)
-		return;
-
-	// check for ammo
-	if(!m_aWeapons[m_ActiveWeapon].m_Ammo)
-	{
-		// 125ms is a magical limit of how fast a human can click
-		m_ReloadTimer = 125 * Server()->TickSpeed() / 1000;
-		if(m_LastNoAmmoSound+Server()->TickSpeed() <= Server()->Tick())
-		{
-			GameServer()->CreateSound(m_Pos, SOUND_WEAPON_NOAMMO);
-			m_LastNoAmmoSound = Server()->Tick();
-		}
-		return;
-	}
-
-	vec2 ProjStartPos = m_Pos+Direction*GetProximityRadius()*0.75f;
-
-	if(Config()->m_Debug)
-	{
-		char aBuf[256];
-		str_format(aBuf, sizeof(aBuf), "shot player='%d:%s' team=%d weapon=%d", m_pPlayer->GetCID(), Server()->ClientName(m_pPlayer->GetCID()), m_pPlayer->GetTeam(), m_ActiveWeapon);
-		GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
-	}
-
-	switch(m_ActiveWeapon)
-	{
-		case WEAPON_HAMMER:
-		{
-			GameServer()->CreateSound(m_Pos, SOUND_HAMMER_FIRE);
-
-			CCharacter *apEnts[MAX_CLIENTS];
-			int Hits = 0;
-			int Num = GameWorld()->FindEntities(ProjStartPos, GetProximityRadius()*0.5f, (CEntity**)apEnts,
-														MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
-
-			for(int i = 0; i < Num; ++i)
-			{
-				CCharacter *pTarget = apEnts[i];
-
-				if((pTarget == this) || GameServer()->Collision()->IntersectLine(ProjStartPos, pTarget->m_Pos, NULL, NULL))
-					continue;
-
-				// set his velocity to fast upward (for now)
-				if(length(pTarget->m_Pos-ProjStartPos) > 0.0f)
-					GameServer()->CreateHammerHit(pTarget->m_Pos-normalize(pTarget->m_Pos-ProjStartPos)*GetProximityRadius()*0.5f);
-				else
-					GameServer()->CreateHammerHit(ProjStartPos);
-
-				vec2 Dir;
-				if(length(pTarget->m_Pos - m_Pos) > 0.0f)
-					Dir = normalize(pTarget->m_Pos - m_Pos);
-				else
-					Dir = vec2(0.f, -1.f);
-
-				pTarget->TakeDamage(vec2(0.f, -1.f) + normalize(Dir + vec2(0.f, -1.1f)) * 10.0f, Dir*-1, g_pData->m_Weapons.m_Hammer.m_pBase->m_Damage,
-					m_pPlayer->GetCID(), m_ActiveWeapon);
-				Hits++;
-			}
-
-			// if we Hit anything, we have to wait for the reload
-			if(Hits)
-				m_ReloadTimer = Server()->TickSpeed()/3;
-
-		} break;
-
-		case WEAPON_GUN:
-		{
-			new CProjectile(GameWorld(), WEAPON_GUN,
-				m_pPlayer->GetCID(),
-				ProjStartPos,
-				Direction,
-				(int)(Server()->TickSpeed()*GameServer()->Tuning()->m_GunLifetime),
-				g_pData->m_Weapons.m_Gun.m_pBase->m_Damage, false, 0, -1, WEAPON_GUN);
-
-			GameServer()->CreateSound(m_Pos, SOUND_GUN_FIRE);
-		} break;
-
-		case WEAPON_SHOTGUN:
-		{
-			int ShotSpread = 2;
-
-			for(int i = -ShotSpread; i <= ShotSpread; ++i)
-			{
-				float Spreading[] = {-0.185f, -0.070f, 0, 0.070f, 0.185f};
-				float a = angle(Direction);
-				a += Spreading[i+2];
-				float v = 1-(absolute(i)/(float)ShotSpread);
-				float Speed = mix((float)GameServer()->Tuning()->m_ShotgunSpeeddiff, 1.0f, v);
-				new CProjectile(GameWorld(), WEAPON_SHOTGUN,
-					m_pPlayer->GetCID(),
-					ProjStartPos,
-					vec2(cosf(a), sinf(a))*Speed,
-					(int)(Server()->TickSpeed()*GameServer()->Tuning()->m_ShotgunLifetime),
-					g_pData->m_Weapons.m_Shotgun.m_pBase->m_Damage, false, 0, -1, WEAPON_SHOTGUN);
-			}
-
-			GameServer()->CreateSound(m_Pos, SOUND_SHOTGUN_FIRE);
-		} break;
-
-		case WEAPON_GRENADE:
-		{
-			new CProjectile(GameWorld(), WEAPON_GRENADE,
-				m_pPlayer->GetCID(),
-				ProjStartPos,
-				Direction,
-				(int)(Server()->TickSpeed()*GameServer()->Tuning()->m_GrenadeLifetime),
-				g_pData->m_Weapons.m_Grenade.m_pBase->m_Damage, true, 0, SOUND_GRENADE_EXPLODE, WEAPON_GRENADE);
-
-			GameServer()->CreateSound(m_Pos, SOUND_GRENADE_FIRE);
-		} break;
-
-		case WEAPON_LASER:
-		{
-			new CLaser(GameWorld(), m_Pos, Direction, GameServer()->Tuning()->m_LaserReach, m_pPlayer->GetCID());
-			GameServer()->CreateSound(m_Pos, SOUND_LASER_FIRE);
-		} break;
-
-		case WEAPON_NINJA:
-		{
-			m_NumObjectsHit = 0;
-
-			m_Ninja.m_ActivationDir = Direction;
-			m_Ninja.m_CurrentMoveTime = g_pData->m_Weapons.m_Ninja.m_Movetime * Server()->TickSpeed() / 1000;
-			m_Ninja.m_OldVelAmount = length(m_Core.m_Vel);
-
-			GameServer()->CreateSound(m_Pos, SOUND_NINJA_FIRE);
-		} break;
-
-	}
-
-	m_AttackTick = Server()->Tick();
-
-	if(m_aWeapons[m_ActiveWeapon].m_Ammo > 0) // -1 == unlimited
-		m_aWeapons[m_ActiveWeapon].m_Ammo--;
-
-	if(!m_ReloadTimer)
-		m_ReloadTimer = g_pData->m_Weapons.m_aId[m_ActiveWeapon].m_Firedelay * Server()->TickSpeed() / 1000;
 }
 
 void CCharacter::HandleWeapons()
 {
-	//ninja
-	HandleNinja();
-
-	// check reload timer
-	if(m_ReloadTimer)
-	{
-		m_ReloadTimer--;
-		return;
-	}
-
-	// fire Weapon, if wanted
-	FireWeapon();
-
-	// ammo regen
-	int AmmoRegenTime = g_pData->m_Weapons.m_aId[m_ActiveWeapon].m_Ammoregentime;
-	if(AmmoRegenTime && m_aWeapons[m_ActiveWeapon].m_Ammo >= 0)
-	{
-		// If equipped and not active, regen ammo?
-		if(m_ReloadTimer <= 0)
-		{
-			if(m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart < 0)
-				m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart = Server()->Tick();
-
-			if((Server()->Tick() - m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart) >= AmmoRegenTime * Server()->TickSpeed() / 1000)
-			{
-				// Add some ammo
-				m_aWeapons[m_ActiveWeapon].m_Ammo = minimum(m_aWeapons[m_ActiveWeapon].m_Ammo + 1,
-					g_pData->m_Weapons.m_aId[m_ActiveWeapon].m_Maxammo);
-				m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart = -1;
-			}
-		}
-		else
-		{
-			m_aWeapons[m_ActiveWeapon].m_AmmoRegenStart = -1;
-		}
-	}
-
-	return;
 }
 
 bool CCharacter::GiveWeapon(int Weapon, int Ammo)
@@ -656,151 +459,11 @@ bool CCharacter::IncreaseArmor(int Amount)
 
 void CCharacter::Die(int Killer, int Weapon)
 {
-	// we got to wait 0.5 secs before respawning
-	m_Alive = false;
-	m_pPlayer->m_RespawnTick = Server()->Tick()+Server()->TickSpeed()/2;
-	int ModeSpecial = GameServer()->m_pController->OnCharacterDeath(this, (Killer < 0) ? 0 : GameServer()->m_apPlayers[Killer], Weapon);
-
-	char aBuf[256];
-	if(Killer < 0)
-	{
-		str_format(aBuf, sizeof(aBuf), "kill killer='%d:%d:' victim='%d:%d:%s' weapon=%d special=%d",
-			Killer, - 1 - Killer,
-			m_pPlayer->GetCID(), m_pPlayer->GetTeam(), Server()->ClientName(m_pPlayer->GetCID()), Weapon, ModeSpecial
-		);
-	}
-	else
-	{
-		str_format(aBuf, sizeof(aBuf), "kill killer='%d:%d:%s' victim='%d:%d:%s' weapon=%d special=%d",
-			Killer, GameServer()->m_apPlayers[Killer]->GetTeam(), Server()->ClientName(Killer),
-			m_pPlayer->GetCID(), m_pPlayer->GetTeam(), Server()->ClientName(m_pPlayer->GetCID()), Weapon, ModeSpecial
-		);
-	}
-	GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
-
-	// send the kill message
-	CNetMsg_Sv_KillMsg Msg;
-	Msg.m_Victim = m_pPlayer->GetCID();
-	Msg.m_ModeSpecial = ModeSpecial;
-	for(int i = 0 ; i < MAX_CLIENTS; i++)
-	{
-		if(!Server()->ClientIngame(i))
-			continue;
-
-		if(Killer < 0 && Server()->GetClientVersion(i) < MIN_KILLMESSAGE_CLIENTVERSION)
-		{
-			Msg.m_Killer = 0;
-			Msg.m_Weapon = WEAPON_WORLD;
-		}
-		else
-		{
-			Msg.m_Killer = Killer;
-			Msg.m_Weapon = Weapon;
-		}
-		Server()->SendPackMsg(&Msg, MSGFLAG_VITAL, i);
-	}
-
-	// a nice sound
-	GameServer()->CreateSound(m_Pos, SOUND_PLAYER_DIE);
-
-	// this is for auto respawn after 3 secs
-	m_pPlayer->m_DieTick = Server()->Tick();
-
-	GameWorld()->RemoveEntity(this);
-	GameWorld()->m_Core.m_apCharacters[m_pPlayer->GetCID()] = 0;
-	GameServer()->CreateDeath(m_Pos, m_pPlayer->GetCID());
 }
 
 bool CCharacter::TakeDamage(vec2 Force, vec2 Source, int Dmg, int From, int Weapon)
 {
-	m_Core.m_Vel += Force;
-
-	if(From >= 0)
-	{
-		if(GameServer()->m_pController->IsFriendlyFire(m_pPlayer->GetCID(), From))
-			return false;
-	}
-	else
-	{
-		int Team = TEAM_RED;
-		if(From == PLAYER_TEAM_BLUE)
-			Team = TEAM_BLUE;
-		if(GameServer()->m_pController->IsFriendlyTeamFire(m_pPlayer->GetTeam(), Team))
-			return false;
-	}
-
-	// m_pPlayer only inflicts half damage on self
-	if(From == m_pPlayer->GetCID())
-		Dmg = maximum(1, Dmg/2);
-
-	int OldHealth = m_Health, OldArmor = m_Armor;
-	if(Dmg)
-	{
-		if(m_Armor)
-		{
-			if(Dmg > 1)
-			{
-				m_Health--;
-				Dmg--;
-			}
-
-			if(Dmg > m_Armor)
-			{
-				Dmg -= m_Armor;
-				m_Armor = 0;
-			}
-			else
-			{
-				m_Armor -= Dmg;
-				Dmg = 0;
-			}
-		}
-
-		m_Health -= Dmg;
-	}
-
-	// create healthmod indicator
-	GameServer()->CreateDamage(m_Pos, m_pPlayer->GetCID(), Source, OldHealth-m_Health, OldArmor-m_Armor, From == m_pPlayer->GetCID());
-
-	// do damage Hit sound
-	if(From >= 0 && From != m_pPlayer->GetCID() && GameServer()->m_apPlayers[From])
-	{
-		int64 Mask = CmaskOne(From);
-		for(int i = 0; i < MAX_CLIENTS; i++)
-		{
-			if(GameServer()->m_apPlayers[i] && (GameServer()->m_apPlayers[i]->GetTeam() == TEAM_SPECTATORS ||  GameServer()->m_apPlayers[i]->m_DeadSpecMode) &&
-				GameServer()->m_apPlayers[i]->GetSpectatorID() == From)
-				Mask |= CmaskOne(i);
-		}
-		GameServer()->CreateSound(GameServer()->m_apPlayers[From]->m_ViewPos, SOUND_HIT, Mask);
-	}
-
-	// check for death
-	if(m_Health <= 0)
-	{
-		Die(From, Weapon);
-
-		// set attacker's face to happy (taunt!)
-		if(From >= 0 && From != m_pPlayer->GetCID() && GameServer()->m_apPlayers[From])
-		{
-			CCharacter *pChr = GameServer()->m_apPlayers[From]->GetCharacter();
-			if(pChr)
-			{
-				pChr->SetEmote(EMOTE_HAPPY, Server()->Tick() + Server()->TickSpeed());
-			}
-		}
-
-		return false;
-	}
-
-	if(Dmg > 2)
-		GameServer()->CreateSound(m_Pos, SOUND_PLAYER_PAIN_LONG);
-	else
-		GameServer()->CreateSound(m_Pos, SOUND_PLAYER_PAIN_SHORT);
-
-	SetEmote(EMOTE_PAIN, Server()->Tick() + 500 * Server()->TickSpeed() / 1000);
-
-	return true;
+	return false;
 }
 
 void CCharacter::Snap(int SnappingClient)

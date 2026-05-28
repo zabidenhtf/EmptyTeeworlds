@@ -898,12 +898,6 @@ set_src(GAME_SERVER GLOB_RECURSE src/game/server
   entities/character.h
   entities/flag.cpp
   entities/flag.h
-  entities/laser.cpp
-  entities/laser.h
-  entities/pickup.cpp
-  entities/pickup.h
-  entities/projectile.cpp
-  entities/projectile.h
   entity.cpp
   entity.h
   eventhandler.cpp
@@ -912,18 +906,6 @@ set_src(GAME_SERVER GLOB_RECURSE src/game/server
   gamecontext.h
   gamecontroller.cpp
   gamecontroller.h
-  gamemodes/ctf.cpp
-  gamemodes/ctf.h
-  gamemodes/dm.cpp
-  gamemodes/dm.h
-  gamemodes/lms.cpp
-  gamemodes/lms.h
-  gamemodes/lts.cpp
-  gamemodes/lts.h
-  gamemodes/mod.cpp
-  gamemodes/mod.h
-  gamemodes/tdm.cpp
-  gamemodes/tdm.h
   gameworld.cpp
   gameworld.h
   player.cpp

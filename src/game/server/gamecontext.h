@@ -9,7 +9,7 @@
 #include <game/commands.h>
 #include <game/layers.h>
 #include <game/voting.h>
-
+#include "gamecontroller.h"
 #include "eventhandler.h"
 #include "gameworld.h"
 

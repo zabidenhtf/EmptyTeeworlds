@@ -22,10 +22,7 @@ class IGameController
 	class IServer *m_pServer;
 
 	// activity
-	void DoActivityCheck();
 	bool GetPlayersReadyState(int WithoutID = -1);
-	void SetPlayersReadyState(bool ReadyState);
-	void CheckReadyStates(int WithoutID = -1);
 
 	// balancing
 	enum
@@ -91,7 +88,6 @@ class IGameController
 	int m_aNumSpawnPoints[3];
 
 	float EvaluateSpawnPos(CSpawnEval *pEval, vec2 Pos) const;
-	void EvaluateSpawnType(CSpawnEval *pEval, int Type) const;
 
 	// team
 	int ClampTeam(int Team) const;
@@ -139,7 +135,6 @@ public:
 			weapon - What weapon that killed it. Can be -1 for undefined
 				weapon when switching team or player suicides.
 	*/
-	virtual int OnCharacterDeath(class CCharacter *pVictim, class CPlayer *pKiller, int Weapon);
 	/*
 		Function: on_CCharacter_spawn
 			Called when a CCharacter spawns into the game world.
@@ -163,7 +158,6 @@ public:
 		Returns:
 			bool?
 	*/
-	virtual bool OnEntity(int Index, vec2 Pos);
 
 	virtual void OnPlayerConnect(class CPlayer *pPlayer);
 	virtual void OnPlayerDisconnect(class CPlayer *pPlayer);
